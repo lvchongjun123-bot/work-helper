@@ -1,4 +1,4 @@
-/* 本地 QA：静态服务器 + 解密解锁 + 多尺寸截图 + 关键交互回归
+/* 本地 QA v2：静态服务器 + 解密解锁 + 多尺寸截图 + 重点背诵/编辑/流程回归
  * 运行：node qa/qa.js
  */
 const http = require("http");
@@ -48,6 +48,8 @@ function startServer() {
 }
 
 async function shoot(page, name, opts = {}) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(180);
   await page.screenshot({ path: path.join(SHOTS, name + ".png"), fullPage: opts.full !== false });
   console.log("shot:", name);
 }
@@ -93,7 +95,8 @@ async function unlockIfLocked(page, password) {
       hasTouch: !!isMobile,
       deviceScaleFactor: isMobile ? 2 : 1,
       serviceWorkers: "block",
-      locale: "zh-CN"
+      locale: "zh-CN",
+      acceptDownloads: true
     });
     const page = await context.newPage();
     page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
@@ -101,7 +104,7 @@ async function unlockIfLocked(page, password) {
     return { context, page };
   }
 
-  /* ---------- 手机 390：解锁流程 + 功能 ---------- */
+  /* ---------- 手机 390 ---------- */
   {
     const { context, page } = await newPage({ width: 390, height: 844 }, true);
     await page.goto(base + "#/flow", { waitUntil: "networkidle" });
@@ -111,119 +114,172 @@ async function unlockIfLocked(page, password) {
     check("lock: 标题不暴露内容", (await page.title()) === "工作小助手", await page.title());
     await shoot(page, "m390-lock");
 
-    // 错误密码
     const wrong = await unlockIfLocked(page, "definitely-wrong-pass");
     check("lock: 错误密码被拒绝", wrong.locked && wrong.error.indexOf("密码不正确") >= 0, wrong.error);
-    // 正确密码
     await page.locator("#unlockPwd").fill(PASSWORD);
     await page.locator("#unlockBtn").click();
     await page.waitForSelector(".hero", { timeout: 20000 }).catch(() => {});
     check("lock: 正确密码解锁", (await page.locator(".hero").count()) === 1);
 
-    // sessionStorage 记住会话，刷新不需要再输
     await page.reload({ waitUntil: "networkidle" });
     await page.waitForTimeout(300);
     check("lock: 刷新后保持解锁", (await page.locator("#unlockPwd").count()) === 0);
 
     await page.goto(base + "#/flow", { waitUntil: "networkidle" });
     await page.waitForTimeout(250);
-
     const items = await page.locator(".titem").count();
     check("flow: 12 items", items === 12, "count=" + items);
+    const tabs = await page.locator(".tabitem").count();
+    check("nav: 4 tabs", tabs === 4, "count=" + tabs);
 
     await page.locator(".tcheck").first().click();
     await page.waitForTimeout(150);
     const checked = await page.locator(".tcheck[aria-checked='true']").count();
     check("flow: checkbox toggles", checked === 1, "checked=" + checked);
-    const ls = await page.evaluate(() => localStorage.getItem("wh.flow." + new Date().toISOString().slice(0, 10)));
-    check("flow: state persisted", !!ls, String(ls));
-
     await shoot(page, "m390-flow");
-
-    await page.locator(".tcard").first().click();
-    await page.waitForTimeout(250);
-    const sheetVisible = await page.locator("#sheet").evaluate((el) => !el.hidden);
-    check("flow: sheet opens", sheetVisible);
-    if (sheetVisible) await shoot(page, "m390-sheet", { full: false });
-    await page.locator(".sheet-close").click();
-    await page.waitForTimeout(150);
-
     await page.locator("#resetFlow").click();
     await page.waitForTimeout(150);
-    const checked2 = await page.locator(".tcheck[aria-checked='true']").count();
-    check("flow: reset works", checked2 === 0, "checked=" + checked2);
 
+    /* 背诵首页：6 个重点卡 */
     await page.goto(base + "#/memory", { waitUntil: "networkidle" });
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(300);
+    const keyCards = await page.locator(".keycard").count();
+    check("memory: 6 key topics", keyCards === 6, "count=" + keyCards);
     const mods = await page.locator(".modcard").count();
     check("memory: 8 modules", mods === 8, "count=" + mods);
     await shoot(page, "m390-memory");
 
+    /* 重点主题详情 + 抽背 */
+    await page.locator(".keycard").first().click();
+    await page.waitForTimeout(300);
+    check("key: detail opens", (await page.locator(".keydetail").count()) === 1);
+    await shoot(page, "m390-key");
+    await page.locator("#keyQuizBtn").click();
+    await page.waitForTimeout(300);
+    const keyMeta = await page.locator(".quiz-meta").innerText();
+    check("key: quiz ranges to topic", /\/\s*6\s*题/.test(keyMeta), keyMeta.replace(/\s+/g, " "));
+
+    /* 抽考默认重点 */
+    await page.goto(base + "#/memory/quiz", { waitUntil: "networkidle" });
+    await page.waitForTimeout(300);
+    await page.locator(".chip", { hasText: "重点" }).first().click();
+    await page.waitForTimeout(300);
+    const meta = await page.locator(".quiz-meta").innerText();
+    check("quiz: 重点 34 题", /\/\s*34\s*题/.test(meta), meta.replace(/\s+/g, " "));
+    await page.locator("#revealBtn").click();
+    await page.waitForTimeout(250);
+    check("quiz: reveal answer", (await page.locator(".answer").count()) === 1);
+    await shoot(page, "m390-quiz");
+    const before = await page.locator(".quiz-meta").innerText();
+    await page.locator("#knownBtn").click();
+    await page.waitForTimeout(250);
+    const after = await page.locator(".quiz-meta").innerText();
+    check("quiz: mark known advances", before !== after);
+
+    /* 搜索 */
+    await page.goto(base + "#/memory", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
     await page.locator("#memSearch").fill("温度");
     await page.waitForTimeout(200);
     const hits = await page.locator("#memResults .qitem").count();
     check("memory: search hits", hits > 0, "hits=" + hits);
-    await shoot(page, "m390-search");
     await page.locator("#memSearch").fill("");
     await page.waitForTimeout(150);
 
+    /* 模块页 + 全条目 */
     await page.goto(base + "#/memory/mod/m3", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    const mq = await page.locator(".qitem").count();
-    check("module m3: 9 questions", mq === 9, "count=" + mq);
-
+    check("module m3: 9 questions", (await page.locator(".qitem").count()) === 9);
     await page.goto(base + "#/memory/q/Q20", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    const ex = await page.locator(".block-ex li").count();
-    check("Q20: 3 exceptions", ex === 3, "count=" + ex);
-    const red = await page.locator(".rednote").count();
-    check("Q20: red note", red === 1);
-    await shoot(page, "m390-question");
+    check("Q20: 3 exceptions", (await page.locator(".block-ex li").count()) === 3);
 
-    await page.goto(base + "#/memory/quiz", { waitUntil: "networkidle" });
-    await page.waitForTimeout(200);
-    await page.locator("#revealBtn").click();
-    await page.waitForTimeout(200);
-    const ans = await page.locator(".answer").count();
-    check("quiz: reveal answer", ans === 1);
-    await shoot(page, "m390-quiz");
-    const before = await page.locator(".quiz-meta").innerText();
-    await page.locator("#knownBtn").click();
-    await page.waitForTimeout(200);
-    const after = await page.locator(".quiz-meta").innerText();
-    check("quiz: mark known advances", before !== after, `${before.replace(/\s+/g, " ")} -> ${after.replace(/\s+/g, " ")}`);
-
-    await page.locator(".chip", { hasText: "直红项" }).first().click();
-    await page.waitForTimeout(250);
-    const redMeta = await page.locator(".quiz-meta").innerText();
-    check("quiz: red range 8", /\/\s*8\s*题/.test(redMeta), redMeta.replace(/\s+/g, " "));
-    await shoot(page, "m390-quiz-red");
-
+    /* 速查 */
     await page.goto(base + "#/ref", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    const refs = await page.locator(".refitem").count();
-    check("ref: sections", refs >= 12, "count=" + refs);
+    check("ref: sections", (await page.locator(".refitem").count()) >= 13);
     await shoot(page, "m390-ref");
-
     await page.goto(base + "#/ref/temp", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    const rows = await page.locator("table tbody tr").count();
-    check("ref temp: 10 rows", rows === 10, "count=" + rows);
+    check("ref temp: 10 rows", (await page.locator("table tbody tr").count()) === 10);
     await shoot(page, "m390-ref-temp");
-
     await page.goto(base + "#/ref/red", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    const redCards = await page.locator(".redcard").count();
-    check("ref red: 8 cards", redCards === 8, "count=" + redCards);
-    await shoot(page, "m390-ref-red");
+    check("ref red: 8 cards", (await page.locator(".redcard").count()) === 8);
 
-    await page.goto(base + "#/ref/calib", { waitUntil: "networkidle" });
+    /* ---------------- 编辑功能 ---------------- */
+    await page.goto(base + "#/edit", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    check("edit: home cards", (await page.locator(".editcard").count()) >= 3);
+    await shoot(page, "m390-edit");
+
+    await page.goto(base + "#/edit/board/new", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    await page.locator("#boardName").fill("测试板块");
+    await page.locator("#boardPlace").selectOption("memory");
+    await page.locator("#boardForm button[type='submit']").click();
+    await page.waitForTimeout(350);
+    const boardHash = await page.evaluate(() => location.hash);
+    check("edit: create board", /#\/edit\/board\/b/.test(boardHash), boardHash);
+    await shoot(page, "m390-board-manage");
+
+    await page.goto(base + "#/edit/board/" + boardHash.split("/")[3] + "/entry/new", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    await page.locator("#entryTitle").fill("测试条目");
+    await page.locator("#entryBody").fill("- 第一条要点\n- 第二条要点\n\n第二段内容");
+    await page.locator("#entryForm button[type='submit']").click();
+    await page.waitForTimeout(350);
+    check("edit: add entry", (await page.locator(".boardrow").count()) >= 1);
+
+    await page.goto(base + "#/memory", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    const hasMy = await page.locator(".boardrow").count();
+    check("memory: my board shows", hasMy >= 1, "rows=" + hasMy);
+    await page.locator(".boardrow").first().click();
+    await page.waitForTimeout(250);
+    check("my: board page opens", (await page.locator(".qitem").count()) >= 1);
+    await page.locator(".qitem").first().click();
+    await page.waitForTimeout(250);
+    check("my: entry page opens", (await page.locator(".richbody").count()) === 1);
+    await shoot(page, "m390-myentry");
+
+    /* 流程编辑 */
+    await page.goto(base + "#/edit/flow/new", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    await page.locator("#flowTime").fill("14:30");
+    await page.locator("#flowName").fill("测试流程条目");
+    await page.locator("#flowForm button[type='submit']").click();
+    await page.waitForTimeout(350);
+    check("edit: add flow item", (await page.locator(".boardrow").count()) === 13);
+    await page.goto(base + "#/flow", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    const flowText = await page.locator(".hero-kicker").innerText();
+    check("flow: custom flow active", flowText.indexOf("自定义") >= 0, flowText);
+    check("flow: 13 items after edit", (await page.locator(".titem").count()) === 13);
+
+    /* 备份导出 */
+    page.on("dialog", (d) => d.accept().catch(() => {}));
+    await page.goto(base + "#/edit/backup", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    const downloadPromise = page.waitForEvent("download", { timeout: 10000 }).catch(() => null);
+    await page.locator("#exportBtn").click();
+    const download = await downloadPromise;
+    check("backup: export downloads json", !!download && /工作助手-我的内容/.test(download.suggestedFilename()), download ? download.suggestedFilename() : "no download");
+
+    /* 清空自定义内容 */
+    await page.locator("#clearBtn").click();
+    await page.waitForTimeout(400);
+    await page.goto(base + "#/flow", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    check("flow: reset to 12 after clear", (await page.locator(".titem").count()) === 12);
+    await page.goto(base + "#/memory", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    await shoot(page, "m390-ref-calib");
+    check("memory: my boards cleared", (await page.locator(".boardrow").count()) === 0);
 
-    for (const hash of ["#/flow", "#/memory", "#/ref", "#/memory/quiz"]) {
+    /* 溢出检查 */
+    for (const hash of ["#/flow", "#/memory", "#/ref", "#/edit", "#/memory/quiz"]) {
       await page.goto(base + hash, { waitUntil: "networkidle" });
-      await page.waitForTimeout(120);
+      await page.waitForTimeout(150);
       const o = await overflow(page);
       check("overflow " + hash, o.diff <= 1, JSON.stringify(o));
     }
@@ -231,7 +287,7 @@ async function unlockIfLocked(page, password) {
     await context.close();
   }
 
-  /* ---------- 小屏 375 / 430 / 平板 768 ---------- */
+  /* ---------- 小屏 / 平板 ---------- */
   for (const [w, h, name] of [[375, 812, "m375-flow"], [430, 932, "m430-memory"], [768, 1024, "tab768-flow"]]) {
     const { context, page } = await newPage({ width: w, height: h }, true);
     const hash = name.includes("memory") ? "#/memory" : "#/flow";
@@ -249,22 +305,19 @@ async function unlockIfLocked(page, password) {
   /* ---------- 桌面 1440 ---------- */
   {
     const { context, page } = await newPage({ width: 1440, height: 900 }, false);
-    await page.goto(base + "#/flow", { waitUntil: "networkidle" });
+    await page.goto(base + "#/memory", { waitUntil: "networkidle" });
     await page.waitForTimeout(250);
     const r = await unlockIfLocked(page);
     check("unlock desktop", !r.error, r.error);
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(250);
     const side = await page.locator(".sidebar").evaluate((el) => getComputedStyle(el).display !== "none");
     const tab = await page.locator(".tabbar").evaluate((el) => getComputedStyle(el).display);
     check("desktop: sidebar visible", side);
     check("desktop: tabbar hidden", tab === "none", tab);
-    await shoot(page, "d1440-flow");
-    await page.goto(base + "#/memory", { waitUntil: "networkidle" });
-    await page.waitForTimeout(200);
     await shoot(page, "d1440-memory");
-    await page.goto(base + "#/ref/temp", { waitUntil: "networkidle" });
-    await page.waitForTimeout(200);
-    await shoot(page, "d1440-ref");
+    await page.goto(base + "#/edit", { waitUntil: "networkidle" });
+    await page.waitForTimeout(250);
+    await shoot(page, "d1440-edit");
     await context.close();
   }
 

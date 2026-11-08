@@ -23,7 +23,7 @@ if (password.length < 6) {
 /* 在隔离上下文里加载三个明文数据文件，收集 window 上的数据 */
 const sandbox = { window: {} };
 vm.createContext(sandbox);
-for (const file of ["data-fsha.js", "data-ref.js", "data-flow.js"]) {
+for (const file of ["data-fsha.js", "data-ref.js", "data-flow.js", "data-key.js"]) {
   const full = path.join(ROOT, "private", file);
   if (!existsSync(full)) {
     console.error("缺少明文数据文件：" + full);
@@ -38,7 +38,8 @@ const payload = {
   modules: w.FSHA_MODULES || [],
   directRed: w.DIRECT_RED || [],
   ref: w.REF_SECTIONS || [],
-  flow: w.WORKFLOW || {}
+  flow: w.WORKFLOW || {},
+  keyTopics: w.KEY_TOPICS || []
 };
 const plaintext = JSON.stringify(payload);
 

@@ -1,10 +1,17 @@
-/* 线上验证：GitHub Pages 真实地址的解锁 / 渲染 / PWA / 响应式检查 */
+/* 线上验证 v2：GitHub Pages 真实地址的解锁 / 重点背诵 / 编辑 / PWA / 响应式 */
 const { chromium } = require("E:/My-codex/daily-workflow/node_modules/playwright");
 const fs = require("fs");
 const path = require("path");
 
 const BASE = "https://lvchongjun123-bot.github.io/work-helper/";
 const PASSWORD = fs.readFileSync(path.join(__dirname, "..", ".access-password.txt"), "utf8").trim();
+const SHOTS = path.join(__dirname, "shots");
+
+async function shot(page, name, fullPage = false) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(SHOTS, name + ".png"), fullPage });
+}
 
 (async () => {
   const browser = await chromium.launch({
@@ -31,15 +38,13 @@ const PASSWORD = fs.readFileSync(path.join(__dirname, "..", ".access-password.tx
 
   const locked = (await page.locator("#unlockPwd").count()) === 1;
   const shellTitle = await page.title();
-  await page.screenshot({ path: path.join(__dirname, "shots", "live-m390-lock.png"), fullPage: true });
+  await shot(page, "live-m390-lock");
 
-  // 错误密码应被拒绝
   await page.locator("#unlockPwd").fill("wrong-password-test");
   await page.locator("#unlockBtn").click();
   await page.waitForTimeout(900);
   const wrongError = (await page.locator("#lockError").innerText()).trim();
 
-  // 正确密码
   await page.locator("#unlockPwd").fill(PASSWORD);
   await page.locator("#unlockBtn").click();
   await page.waitForSelector(".hero", { timeout: 25000 }).catch(() => {});
@@ -48,6 +53,8 @@ const PASSWORD = fs.readFileSync(path.join(__dirname, "..", ".access-password.tx
   const title = await page.title();
   const hero = (await page.locator(".hero-date").innerText()).trim();
   const items = await page.locator(".titem").count();
+  const tabs = await page.locator(".tabitem").count();
+  await shot(page, "live-m390-flow");
 
   const sw = await page.evaluate(async () => {
     try {
@@ -59,7 +66,6 @@ const PASSWORD = fs.readFileSync(path.join(__dirname, "..", ".access-password.tx
     } catch (e) { return false; }
   });
 
-  // 离线验证：先在线刷新让 SW 接管，再断网重载
   let offlineOk = false;
   if (sw) {
     await page.reload({ waitUntil: "networkidle" });
@@ -69,25 +75,44 @@ const PASSWORD = fs.readFileSync(path.join(__dirname, "..", ".access-password.tx
       offlineOk = !!(r && r.status() === 200) && (await page.locator(".hero").count()) > 0;
     } catch (e) { offlineOk = false; }
     await ctxMobile.setOffline(false);
-    await page.goto(BASE + "#/flow", { waitUntil: "networkidle" });
+    await page.goto(BASE + "#/memory", { waitUntil: "networkidle" });
     await page.waitForTimeout(400);
   }
 
-  await page.screenshot({ path: path.join(__dirname, "shots", "live-m390-flow.png"), fullPage: true });
-  await page.goto(BASE + "#/memory", { waitUntil: "networkidle" });
+  await shot(page, "live-m390-memory");
+  const keyCards = await page.locator(".keycard").count();
+  const mods = await page.locator(".modcard").count();
+
+  // 重点主题详情
+  await page.locator(".keycard").first().click();
   await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(__dirname, "shots", "live-m390-memory.png"), fullPage: true });
+  const keyDetail = (await page.locator(".keydetail").count()) === 1;
+  await shot(page, "live-m390-key");
+
+  // 抽考
+  await page.goto(BASE + "#/memory/quiz", { waitUntil: "networkidle" });
+  await page.waitForTimeout(300);
+  await page.locator(".chip", { hasText: "重点" }).first().click();
+  await page.waitForTimeout(300);
+  const quizMeta = (await page.locator(".quiz-meta").innerText()).replace(/\s+/g, " ");
+  await shot(page, "live-m390-quiz");
+
+  // 编辑页
+  await page.goto(BASE + "#/edit", { waitUntil: "networkidle" });
+  await page.waitForTimeout(300);
+  const editCards = await page.locator(".editcard").count();
+  await shot(page, "live-m390-edit");
 
   const ctxDesktop = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
   const dpage = await ctxDesktop.newPage();
-  await dpage.goto(BASE + "#/flow", { waitUntil: "networkidle" });
+  await dpage.goto(BASE + "#/memory", { waitUntil: "networkidle" });
   await dpage.waitForTimeout(300);
   await dpage.locator("#unlockPwd").fill(PASSWORD);
   await dpage.locator("#unlockBtn").click();
-  await dpage.waitForSelector(".hero", { timeout: 25000 }).catch(() => {});
-  await dpage.waitForTimeout(300);
+  await dpage.waitForSelector(".keycard", { timeout: 25000 }).catch(() => {});
+  await dpage.waitForTimeout(400);
   const sidebar = await dpage.locator(".sidebar").evaluate((el) => getComputedStyle(el).display !== "none");
-  await dpage.screenshot({ path: path.join(__dirname, "shots", "live-d1440-flow.png"), fullPage: true });
+  await shot(dpage, "live-d1440-memory");
 
   console.log(JSON.stringify({
     status: resp ? resp.status() : null,
@@ -97,6 +122,12 @@ const PASSWORD = fs.readFileSync(path.join(__dirname, "..", ".access-password.tx
     titleAfterUnlock: title,
     hero,
     items,
+    tabs,
+    keyCards,
+    modules: mods,
+    keyDetail,
+    quizMeta,
+    editCards,
     serviceWorker: sw,
     offlineReload: offlineOk,
     desktopSidebar: sidebar,

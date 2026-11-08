@@ -1,14 +1,13 @@
-"""Generate PWA icons (PNG) from the same design as icon.svg.
+"""Generate PWA icons: Sam's Club blue tile + white diamond + check.
 Run with the bundled Python (Pillow available).
 """
 from PIL import Image, ImageDraw
 
 S = 1024
-TOP = (11, 111, 196)
-BOTTOM = (0, 88, 163)
-BRAND = (0, 88, 163)
+TOP = (10, 127, 184)
+BOTTOM = (0, 103, 160)
+BRAND = (0, 103, 160)
 WHITE = (255, 255, 255)
-YELLOW = (255, 194, 32)
 
 
 def lerp(a, b, t):
@@ -31,14 +30,11 @@ def build(rounded=True):
     d = ImageDraw.Draw(img)
     k = S / 512.0
 
-    def r(x, y, w, h, rad, fill):
-        d.rounded_rectangle([x * k, y * k, (x + w) * k, (y + h) * k], radius=rad * k, fill=fill)
+    diamond = [(256 * k, 78 * k), (434 * k, 256 * k), (256 * k, 434 * k), (78 * k, 256 * k)]
+    d.polygon(diamond, fill=WHITE)
 
-    r(152, 120, 208, 292, 40, WHITE)   # clipboard
-    r(204, 92, 104, 64, 24, YELLOW)    # clip
-
-    pts = [(196 * k, 278 * k), (236 * k, 318 * k), (318 * k, 228 * k)]
-    w = int(30 * k)
+    pts = [(172 * k, 258 * k), (230 * k, 316 * k), (346 * k, 194 * k)]
+    w = int(40 * k)
     d.line(pts, fill=BRAND, width=w, joint="curve")
     for p in (pts[0], pts[-1]):
         rad = w / 2
