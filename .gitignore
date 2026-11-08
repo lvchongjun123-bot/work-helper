@@ -1,0 +1,11 @@
+# QA 产物
+qa/shots/
+node_modules/
+
+# 本机私有内容（不进仓库）
+private/
+.access-password.txt
+
+# 系统
+Thumbs.db
+.DS_Store
