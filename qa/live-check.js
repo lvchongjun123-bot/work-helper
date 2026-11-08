@@ -47,11 +47,11 @@ async function shot(page, name, fullPage = false) {
 
   await page.locator("#unlockPwd").fill(PASSWORD);
   await page.locator("#unlockBtn").click();
-  await page.waitForSelector(".hero", { timeout: 25000 }).catch(() => {});
+  await page.waitForSelector(".page-head", { timeout: 25000 }).catch(() => {});
   await page.waitForTimeout(500);
 
   const title = await page.title();
-  const hero = (await page.locator(".hero-date").innerText()).trim();
+  const hero = (await page.locator(".page-head h1").innerText()).trim();
   const items = await page.locator(".titem").count();
   const tabs = await page.locator(".tabitem").count();
   await shot(page, "live-m390-flow");
@@ -72,7 +72,7 @@ async function shot(page, name, fullPage = false) {
     await ctxMobile.setOffline(true);
     try {
       const r = await page.reload({ waitUntil: "domcontentloaded", timeout: 15000 });
-      offlineOk = !!(r && r.status() === 200) && (await page.locator(".hero").count()) > 0;
+      offlineOk = !!(r && r.status() === 200) && (await page.locator(".page-head").count()) > 0;
     } catch (e) { offlineOk = false; }
     await ctxMobile.setOffline(false);
     await page.goto(BASE + "#/memory", { waitUntil: "networkidle" });

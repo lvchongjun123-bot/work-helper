@@ -118,8 +118,8 @@ async function unlockIfLocked(page, password) {
     check("lock: 错误密码被拒绝", wrong.locked && wrong.error.indexOf("密码不正确") >= 0, wrong.error);
     await page.locator("#unlockPwd").fill(PASSWORD);
     await page.locator("#unlockBtn").click();
-    await page.waitForSelector(".hero", { timeout: 20000 }).catch(() => {});
-    check("lock: 正确密码解锁", (await page.locator(".hero").count()) === 1);
+    await page.waitForSelector(".page-head", { timeout: 20000 }).catch(() => {});
+    check("lock: 正确密码解锁", (await page.locator(".page-head").count()) === 1);
 
     await page.reload({ waitUntil: "networkidle" });
     await page.waitForTimeout(300);
@@ -148,6 +148,16 @@ async function unlockIfLocked(page, password) {
     const mods = await page.locator(".modcard").count();
     check("memory: 8 modules", mods === 8, "count=" + mods);
     await shoot(page, "m390-memory");
+
+    /* 折叠动画 */
+    await page.locator(".fold-head").click();
+    await page.waitForTimeout(800);
+    const foldOpen = await page.locator("#allFold").evaluate((el) => el.classList.contains("open"));
+    const foldCount = (await page.locator("#modCount").innerText()).trim();
+    check("memory: fold expands", foldOpen && foldCount === "35", "open=" + foldOpen + " count=" + foldCount);
+    await shoot(page, "m390-fold-open", { full: false });
+    await page.locator(".fold-head").click();
+    await page.waitForTimeout(500);
 
     /* 重点主题详情 + 抽背 */
     await page.locator(".keycard").first().click();
@@ -253,8 +263,8 @@ async function unlockIfLocked(page, password) {
     check("edit: add flow item", (await page.locator(".boardrow").count()) === 13);
     await page.goto(base + "#/flow", { waitUntil: "networkidle" });
     await page.waitForTimeout(250);
-    const flowText = await page.locator(".hero-kicker").innerText();
-    check("flow: custom flow active", flowText.indexOf("自定义") >= 0, flowText);
+    const flowCrumb = await page.locator(".page-head .crumb").innerText();
+    check("flow: custom flow active", flowCrumb.indexOf("自定义") >= 0, flowCrumb);
     check("flow: 13 items after edit", (await page.locator(".titem").count()) === 13);
 
     /* 备份导出 */
