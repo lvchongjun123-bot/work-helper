@@ -118,8 +118,8 @@ async function unlockIfLocked(page, password) {
     check("lock: 错误密码被拒绝", wrong.locked && wrong.error.indexOf("密码不正确") >= 0, wrong.error);
     await page.locator("#unlockPwd").fill(PASSWORD);
     await page.locator("#unlockBtn").click();
-    await page.waitForSelector(".page-head", { timeout: 20000 }).catch(() => {});
-    check("lock: 正确密码解锁", (await page.locator(".page-head").count()) === 1);
+    await page.waitForSelector(".page-band", { timeout: 20000 }).catch(() => {});
+    check("lock: 正确密码解锁", (await page.locator(".page-band").count()) === 1);
 
     await page.reload({ waitUntil: "networkidle" });
     await page.waitForTimeout(300);
@@ -263,7 +263,7 @@ async function unlockIfLocked(page, password) {
     check("edit: add flow item", (await page.locator(".boardrow").count()) === 13);
     await page.goto(base + "#/flow", { waitUntil: "networkidle" });
     await page.waitForTimeout(250);
-    const flowCrumb = await page.locator(".page-head .crumb").innerText();
+    const flowCrumb = await page.locator(".page-band .crumb").innerText();
     check("flow: custom flow active", flowCrumb.indexOf("自定义") >= 0, flowCrumb);
     check("flow: 13 items after edit", (await page.locator(".titem").count()) === 13);
 
@@ -323,6 +323,8 @@ async function unlockIfLocked(page, password) {
     const side = await page.locator(".sidebar").evaluate((el) => getComputedStyle(el).display !== "none");
     const tab = await page.locator(".tabbar").evaluate((el) => getComputedStyle(el).display);
     check("desktop: sidebar visible", side);
+    const tocVisible = await page.locator(".toc").evaluate((el) => getComputedStyle(el).display !== "none").catch(() => false);
+    check("desktop: toc visible", tocVisible);
     check("desktop: tabbar hidden", tab === "none", tab);
     await shoot(page, "d1440-memory");
     await page.goto(base + "#/edit", { waitUntil: "networkidle" });
@@ -343,3 +345,5 @@ async function unlockIfLocked(page, password) {
     process.exitCode = 1;
   }
 })();
+
+

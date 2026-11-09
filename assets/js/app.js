@@ -56,6 +56,8 @@
   };
 
   let appReady = false;
+  let lastHash = location.hash;
+  const scrollMemo = {};
 
   function buildDerived() {
     QLIST = [];
@@ -191,6 +193,73 @@
     return '<p class="foot">' + text + "</p>";
   }
 
+  function bandHead(crumb, title, metaHtml) {
+    return '<header class="page-band"><div class="band-in">' +
+      '<p class="crumb">' + esc(crumb) + "</p><h1>" + esc(title) + "</h1>" +
+      (metaHtml ? '<div class="meta">' + metaHtml + "</div>" : "") +
+      "</div></header>";
+  }
+
+  function pageWrap(bandHtml, contentHtml) {
+    return bandHtml + '<div class="page-body"><div class="page-main">' + contentHtml + "</div></div>";
+  }
+
+  function detailWrap(contentHtml) {
+    return '<div class="page-body"><div class="page-main">' + contentHtml + "</div></div>";
+  }
+
+  let tocObserver = null;
+  function buildToc() {
+    const body = els.view.querySelector(".page-body");
+    if (!body) return;
+    const nodes = Array.from(els.view.querySelectorAll("[data-toc]")).filter((el) => !el.hidden);
+    const toc = document.createElement("nav");
+    toc.className = "toc";
+    let html = "";
+    if (nodes.length) {
+      html += "<h4>本页</h4>";
+      nodes.forEach((el, i) => {
+        if (!el.id) el.id = "toc-sec-" + i;
+        html += '<button type="button" class="toc-link" data-toc-target="' + el.id + '">' + esc(el.getAttribute("data-toc")) + "</button>";
+      });
+    }
+    html += '<div class="toc-sub"><h4>快捷</h4>' +
+      '<a class="toc-link" href="#/flow">今日流程</a>' +
+      '<a class="toc-link" href="#/memory">背诵</a>' +
+      '<a class="toc-link" href="#/ref">速查</a>' +
+      '<a class="toc-link" href="#/edit">编辑</a></div>';
+    toc.innerHTML = html;
+    body.appendChild(toc);
+    toc.querySelectorAll("[data-toc-target]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = document.getElementById(btn.getAttribute("data-toc-target"));
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+    if (tocObserver) { tocObserver.disconnect(); tocObserver = null; }
+    if (nodes.length && "IntersectionObserver" in window) {
+      const links = toc.querySelectorAll("[data-toc-target]");
+      tocObserver = new IntersectionObserver((entries) => {
+        entries.forEach((en) => {
+          if (!en.isIntersecting) return;
+          links.forEach((a) => a.classList.toggle("on", a.getAttribute("data-toc-target") === en.target.id));
+        });
+      }, { rootMargin: "-12% 0px -70% 0px", threshold: 0 });
+      nodes.forEach((n) => tocObserver.observe(n));
+      if (links[0]) links[0].classList.add("on");
+    }
+  }
+
+  function animatePage() {
+    els.view.classList.remove("page-an");
+    void els.view.offsetWidth;
+    els.view.classList.add("page-an");
+  }
+
+  function haptic(ms) {
+    try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch (err) { /* 忽略 */ }
+  }
+
   /* ---------------- 我的内容存储 ---------------- */
   function loadCustom() {
     const c = storeGet(CUSTOM_KEY, null);
@@ -243,7 +312,10 @@
     else if (tab === "my") { setSub("我的板块"); renderMy(parts); }
     else { setSub("今日流程"); renderFlow(t); }
 
+    buildToc();
+    animatePage();
     if (keepScroll) window.scrollTo(0, y);
+    else if (opts && typeof opts.restoreY === "number") window.scrollTo(0, opts.restoreY);
     else scrollTop();
   }
 
@@ -297,15 +369,17 @@
       ? '<p class="flow-next"><span class="flow-next-k">' + (timeToMin(next.t) >= t.minutes ? "接下来" : "待完成") + "</span><b>" + esc(next.t) + " " + esc(next.name) + "</b></p>"
       : '<p class="flow-next"><span class="flow-next-k">完成</span><b>今天的流程已全部勾完</b></p>';
 
-    els.view.innerHTML = [
-      pageHead("今日流程 · " + (f.title || "工作流程") + (isCustom ? "（自定义）" : ""), t.dateLabel + " " + t.weekLabel, "<b>" + done + "</b> / " + total + " 已完成"),
-      '<div class="flow-bar"><span class="flow-track"><i style="width:' + pct + '%"></i></span><span class="flow-frac">' + done + "/" + total + "</span></div>",
-      nextLine,
-      '<p class="flow-note">' + esc(isCustom ? "当前使用你自定义的流程；可在「编辑 → 流程编辑」里修改。" : (f.note || "")) + "</p>",
-      '<ol class="timeline">' + rows + "</ol>",
-      '<div class="flow-actions"><a class="rowlink" href="#/edit/flow">编辑流程</a><button class="rowlink" type="button" id="resetFlow">清空今日勾选</button></div>',
-      footLine("勾选记录只保存在本机，按天自动隔离；第二天打开是全新清单。")
-    ].join("");
+    els.view.innerHTML = pageWrap(
+      bandHead("今日流程 · " + (f.title || "工作流程") + (isCustom ? "（自定义）" : ""), t.dateLabel + " " + t.weekLabel, "<b>" + done + "</b> / " + total + " 已完成"),
+      [
+        '<div class="flow-bar"><span class="flow-track"><i style="width:' + pct + '%"></i></span><span class="flow-frac">' + done + "/" + total + "</span></div>",
+        nextLine,
+        '<p class="flow-note">' + esc(isCustom ? "当前使用你自定义的流程；可在「编辑 → 流程编辑」里修改。" : (f.note || "")) + "</p>",
+        '<ol class="timeline" id="s-timeline" data-toc="时间轴">' + rows + "</ol>",
+        '<div class="flow-actions"><a class="rowlink" href="#/edit/flow">编辑流程</a><button class="rowlink" type="button" id="resetFlow">清空今日勾选</button></div>',
+        footLine("勾选记录只保存在本机，按天自动隔离；第二天打开是全新清单。")
+      ].join("")
+    );
 
     const resetBtn = document.getElementById("resetFlow");
     if (resetBtn) {
@@ -323,6 +397,7 @@
     if (checked[tKey]) delete checked[tKey];
     else checked[tKey] = true;
     storeSet(skey, checked);
+    haptic(8);
     renderRoot({ keepScroll: true });
   }
 
@@ -424,14 +499,13 @@
     const myBoards = customBoards("memory");
     const modRows = MODULES.map(moduleRow).join("");
 
-    els.view.innerHTML = [
-      pageHead("FSHA V1.2 · 背诵", "背诵重点", "<b>6</b> 项重点 · <b>" + keyTotal + "</b> 道问答"),
+    const content = [
       '<div class="search" role="search">' +
         '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="M15.4 15.4l4.4 4.4"/></svg>' +
         '<input id="memSearch" type="search" placeholder="搜索 35 条审核条目" autocomplete="off" aria-label="搜索审核条目">' +
       "</div>",
       '<div id="memMain">',
-      '<section class="sec">' + sectionHead("重点背诵", "6 项") +
+      '<section class="sec" id="s-focus" data-toc="重点背诵">' + sectionHead("重点背诵", "6 项") +
         '<ol class="keylist">' + KEY_TOPICS.map(keyRow).join("") + "</ol>" +
         '<button class="quiz-row" type="button" id="startQuiz">' +
           '<svg class="ic q-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>' +
@@ -439,7 +513,7 @@
           '<span class="q-go">开始 →</span>' +
         "</button>" +
       "</section>",
-      '<section class="sec">' +
+      '<section class="sec" id="s-all" data-toc="全部审核条目">' +
         '<div class="fold" id="allFold">' +
           '<button class="fold-head" type="button" aria-expanded="false" aria-controls="foldBody">' +
             '<span class="fold-title">全部审核条目</span>' +
@@ -451,12 +525,17 @@
         "</div>" +
       "</section>",
       myBoards.length
-        ? '<section class="sec">' + sectionHead("我的板块", myBoards.length + " 个") + '<div class="boardlist">' + myBoards.map((b, i) => boardRowHtml(b, i, false)).join("") + "</div></section>"
-        : "",
+        ? '<section class="sec" id="s-my" data-toc="我的板块">' + sectionHead("我的板块", myBoards.length + " 个") + '<div class="boardlist">' + myBoards.map((b, i) => boardRowHtml(b, i, false)).join("") + "</div></section>"
+        : '<section class="sec" id="s-my" data-toc="我的板块" hidden></section>',
       footLine("内置条目只读（FSHA V1.2 · 2026-11-07）· 我的内容仅存本机 · 仅供个人复习参考"),
       "</div>",
       '<div id="memResults" hidden></div>'
     ].join("");
+
+    els.view.innerHTML = pageWrap(
+      bandHead("FSHA V1.2 · 背诵", "背诵重点", "<b>6</b> 项重点 · <b>" + keyTotal + "</b> 道问答"),
+      content
+    );
 
     bindMemoryIndex();
   }
@@ -549,14 +628,14 @@
     const qs = KEY_QUIZ.filter((x) => x.keyId === id);
     const known = masteryCount(qs.map((x) => x.id));
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/memory", "背诵"),
       detailHead("重点 " + pad2(idx + 1) + " · " + (k.source || ""), k.title, k.sub),
       '<article class="keydetail">',
       renderSectionBlocks(k.sections),
       '<div class="detail-actions"><button class="btn primary" type="button" id="keyQuizBtn">抽背本主题（' + qs.length + " 题）</button><span class=\"muted-note\">已掌握 " + known + " / " + qs.length + "</span></div>",
       "</article>"
-    ].join("");
+    ].join(""));
 
     const btn = document.getElementById("keyQuizBtn");
     if (btn) btn.addEventListener("click", () => {
@@ -593,13 +672,13 @@
       "</li>"
     ].join("")).join("");
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/memory", "背诵"),
       detailHead(m.code + " · 审核条目", m.name, "共 " + (m.questions || []).length + " 条"),
       '<ul class="qlist">' + rows + "</ul>",
       '<div class="detail-actions"><button class="btn ghost" type="button" id="modQuizBtn">抽考本模块（' + (m.questions || []).length + " 题）</button></div>",
       footLine("点条目查看：审核区域、审核方式、标准、例外情形。标「直红」的条目可能导致直接红灯。")
-    ].join("");
+    ].join(""));
 
     const btn = document.getElementById("modQuizBtn");
     if (btn) btn.addEventListener("click", () => {
@@ -623,7 +702,7 @@
     const areas = (q.areas || []).map((a) => '<span class="area">' + esc(a) + "</span>").join("");
     const exceptions = (q.exceptions || []).map((e) => "<li>" + esc(e) + "</li>").join("");
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/memory/mod/" + m.id, m.name),
       detailHead(q.id + " · " + m.name, q.title),
       '<article class="qdetail">',
@@ -639,7 +718,7 @@
       nextQ ? '<a class="rowlink" href="#/memory/q/' + nextQ.id + '">' + nextQ.id + " ›</a>" : "<span></span>",
       "</nav>",
       "</article>"
-    ].join("");
+    ].join(""));
   }
 
   /* ---------------- 随机抽考 ---------------- */
@@ -754,7 +833,7 @@
       body = quizCard(cur);
     }
 
-    els.view.innerHTML = head + body;
+    els.view.innerHTML = detailWrap(head + body);
     bindQuiz();
   }
 
@@ -819,6 +898,7 @@
         if (!map[cur.id]) { map[cur.id] = true; quiz.roundKnown += 1; }
         storeSet(STORE_MASTERY, map);
       }
+      haptic(10);
       quiz.idx += 1;
       quiz.revealed = false;
       renderRoot({ keepScroll: true });
@@ -867,25 +947,25 @@
       "</li>"
     ].join("")).join("");
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink(back, b.place === "ref" ? "速查" : "背诵"),
       detailHead("我的板块 · " + (b.place === "ref" ? "速查" : "背诵"), b.name, "共 " + (b.entries || []).length + " 条"),
       '<div class="subhead-actions"><a class="rowlink" href="#/edit/board/' + b.id + '">管理这个板块</a></div>',
       (b.entries || []).length ? '<ul class="qlist">' + entries + "</ul>" : '<div class="empty"><p>这个板块还没有内容</p><span class="empty-sub">去「编辑」里添加条目</span></div>',
       footLine("自定义内容只保存在本机浏览器；换设备前请在「编辑 → 备份与恢复」导出备份。")
-    ].join("");
+    ].join(""));
   }
 
   function renderBoardEntry(boardId, entryId) {
     const b = findBoard(boardId);
     const e = b && (b.entries || []).find((x) => x.id === entryId);
     if (!b || !e) { renderMemoryIndex(); return; }
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/my/board/" + b.id, b.name),
       detailHead("我的板块 · " + (b.place === "ref" ? "速查" : "背诵"), e.title),
       '<article class="qdetail"><div class="richbody">' + renderRichBody(e.body) + "</div>" +
         '<div class="subhead-actions"><a class="rowlink" href="#/edit/board/' + b.id + '/entry/' + e.id + '">编辑这条</a></div></article>'
-    ].join("");
+    ].join(""));
   }
 
   function firstLine(text) {
@@ -943,34 +1023,49 @@
   }
 
   function renderRefList() {
-    const builtin = REF.map((s, i) => refRowHtml("#/ref/" + s.id, i, s.title, s.sub || "", s.tag)).join("");
+    const groups = [
+      { id: "s-ref-core", title: "审核标准", ids: ["basics", "score", "red", "temp"] },
+      { id: "s-ref-cards", title: "速记卡", ids: ["calib", "fourfood", "fourfire", "sick", "pest", "chem", "mnemonic"] },
+      { id: "s-ref-policy", title: "流程与政策", ids: ["appeal", "policy"] }
+    ];
+    const indexOf = {};
+    REF.forEach((s, i) => { indexOf[s.id] = i; });
+    const groupsHtml = groups.map((g) => {
+      const rows = g.ids.map((id) => REF.find((s) => s.id === id)).filter(Boolean)
+        .map((s) => refRowHtml("#/ref/" + s.id, indexOf[s.id], s.title, s.sub || "", s.tag)).join("");
+      return '<section class="sec" id="' + g.id + '" data-toc="' + g.title + '">' +
+        sectionHead(g.title, String((rows.match(/class="refitem"/g) || []).length) + " 项") +
+        '<div class="reflist">' + rows + "</div></section>";
+    }).join("");
     const custom = customBoards("ref");
     const customHtml = custom.length
-      ? '<section class="sec">' + sectionHead("我的速查", custom.length + " 个") + '<div class="reflist">' + custom.map((b, i) => refRowHtml("#/my/board/" + b.id, i, b.name, (b.entries || []).length + " 条 · 我的板块")).join("") + "</div></section>"
+      ? '<section class="sec" id="s-ref-my" data-toc="我的速查">' + sectionHead("我的速查", custom.length + " 个") + '<div class="reflist">' + custom.map((b, i) => refRowHtml("#/my/board/" + b.id, i, b.name, (b.entries || []).length + " 条 · 我的板块")).join("") + "</div></section>"
       : "";
 
-    els.view.innerHTML = [
-      pageHead("FSHA V1.2 · 速查", "速查", "<b>" + REF.length + "</b> 个主题"),
-      '<div class="reflist">' + builtin + "</div>",
-      customHtml,
-      footLine("标「待核对」的卡片来自 9 月背诵表，与 V1.2 有差异或未被收录；请以公司最新文件为准。"),
-      '<section class="sec aboutbox"><h2>关于</h2>' +
-        "<p>" + esc(META.appName || "工作小助手") + " · FSHA " + esc(META.fshaVersion || "") + "（" + esc(META.fshaUpdated || "") + "）</p>" +
-        "<p>内容来源：" + esc(META.source || "") + "；流程初版来自 daily-workflow 早班模板。</p>" +
-        "<p>我的自定义板块只保存在本机浏览器，不上传、不统计。</p>" +
-      "</section>"
-    ].join("");
+    els.view.innerHTML = pageWrap(
+      bandHead("FSHA V1.2 · 速查", "速查", "<b>" + REF.length + "</b> 个主题"),
+      [
+        groupsHtml,
+        customHtml,
+        footLine("标「待核对」的卡片来自 9 月背诵表，与 V1.2 有差异或未被收录；请以公司最新文件为准。"),
+        '<section class="sec aboutbox"><h2>关于</h2>' +
+          "<p>" + esc(META.appName || "工作小助手") + " · FSHA " + esc(META.fshaVersion || "") + "（" + esc(META.fshaUpdated || "") + "）</p>" +
+          "<p>内容来源：" + esc(META.source || "") + "；流程初版来自 daily-workflow 早班模板。</p>" +
+          "<p>我的自定义板块只保存在本机浏览器，不上传、不统计。</p>" +
+        "</section>"
+      ].join("")
+    );
   }
 
   function renderRefDetail(sec) {
     const idx = REF.findIndex((x) => x.id === sec.id);
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/ref", "速查"),
       detailHead(pad2(idx + 1) + " · 速查", sec.title, sec.sub || ""),
       sec.tag ? '<p class="tagline"><span class="tag-warn">' + esc(sec.tag) + "</span> 请按公司最新文件核对</p>" : "",
       renderBlocks(sec.blocks || []),
       footLine("来源：FSHA 审核标准 V1.2（2026-11-07）" + (sec.tag ? "；部分内容来自 9 月背诵表" : "") + "。仅供个人复习参考。")
-    ].join("");
+    ].join(""));
   }
 
   function renderBlocks(blocks) {
@@ -1051,19 +1146,21 @@
       { href: "#/edit/backup", title: "备份与恢复", sub: "导出或导入 JSON，换手机可迁移" }
     ].map((r, i) => '<a class="editcard" href="' + r.href + '"><span class="idx">' + pad2(i + 1) + '</span><span class="edit-body"><b>' + r.title + "</b><span>" + r.sub + "</span></span>" + CHEV + "</a>").join("");
 
-    els.view.innerHTML = [
-      pageHead("我的内容 · 仅存本机", "编辑", "改动只保存在本机"),
-      '<div class="editgrid">' + rows + "</div>",
-      '<section class="sec">' + sectionHead("我的板块", boards.length + " 个") +
-        (boards.length
-          ? '<div class="boardlist">' + boards.map((b, i) => boardRowHtml(b, i, true)).join("") + "</div>"
-          : '<div class="empty"><p>还没有自定义板块</p><span class="empty-sub">点上方「新建板块」开始加内容</span></div>') +
-      "</section>",
-      '<section class="sec aboutbox"><h2>数据存在哪</h2>' +
-        "<p>你新增的板块、条目和流程只保存在这台设备的浏览器里，不上传公网。换手机或清理浏览器数据前，先在「备份与恢复」导出 JSON，另一台设备导入即可。</p>" +
-        "<p>内置的 35 条审核条目、速记卡是只读的；想改其中内容，可以把要点放进「我的板块」再编辑。</p>" +
-      "</section>"
-    ].join("");
+    els.view.innerHTML = pageWrap(
+      bandHead("我的内容 · 仅存本机", "编辑", "改动只保存在本机"),
+      [
+        '<section class="sec" id="s-edit-actions" data-toc="操作"><div class="editgrid">' + rows + "</div></section>",
+        '<section class="sec" id="s-edit-boards" data-toc="我的板块">' + sectionHead("我的板块", boards.length + " 个") +
+          (boards.length
+            ? '<div class="boardlist">' + boards.map((b, i) => boardRowHtml(b, i, true)).join("") + "</div>"
+            : '<div class="empty"><p>还没有自定义板块</p><span class="empty-sub">点上方「新建板块」开始加内容</span></div>') +
+        "</section>",
+        '<section class="sec aboutbox"><h2>数据存在哪</h2>' +
+          "<p>你新增的板块、条目和流程只保存在这台设备的浏览器里，不上传公网。换手机或清理浏览器数据前，先在「备份与恢复」导出 JSON，另一台设备导入即可。</p>" +
+          "<p>内置的 35 条审核条目、速记卡是只读的；想改其中内容，可以把要点放进「我的板块」再编辑。</p>" +
+        "</section>"
+      ].join("")
+    );
   }
 
   function renderBoardForm(boardId) {
@@ -1073,7 +1170,7 @@
     const name = board ? board.name : "";
     const place = board ? board.place : "memory";
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink(isNew ? "#/edit" : "#/edit/board/" + board.id, "编辑"),
       detailHead("我的板块", isNew ? "新建板块" : "修改板块", "板块会显示在「背诵」或「速查」页"),
       '<form id="boardForm" class="form" autocomplete="off">',
@@ -1083,7 +1180,7 @@
       '<div class="form-actions"><button class="btn primary" type="submit">保存</button><a class="btn ghost" href="' + (isNew ? "#/edit" : "#/edit/board/" + board.id) + '">取消</a>' +
         (!isNew ? '<button class="btn danger" type="button" id="delBoard">删除板块</button>' : "") + "</div>",
       "</form>"
-    ].join("");
+    ].join(""));
 
     const form = document.getElementById("boardForm");
     form.addEventListener("submit", (e) => {
@@ -1124,14 +1221,14 @@
       "</div>"
     ].join("")).join("");
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/edit", "编辑"),
       detailHead("我的板块 · " + (board.place === "ref" ? "速查" : "背诵"), board.name, "共 " + (board.entries || []).length + " 条"),
       '<div class="subhead-actions"><a class="rowlink" href="#/my/board/' + board.id + '">预览</a><a class="rowlink" href="#/edit/board/' + board.id + '/edit">修改名称</a></div>',
       (board.entries || []).length ? '<div class="boardlist">' + entries + "</div>" : '<div class="empty"><p>还没有条目</p><span class="empty-sub">点下面「添加条目」开始写</span></div>',
       '<div class="form-actions"><a class="btn primary" href="#/edit/board/' + board.id + '/entry/new">添加条目</a></div>',
       footLine("条目正文支持多行：空行分段，行首「- 」或「1. 」显示为列表。")
-    ].join("");
+    ].join(""));
 
     els.view.querySelectorAll("[data-del-entry]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1152,7 +1249,7 @@
     if (entryId && !entry) { renderBoardManage(boardId); return; }
     const isNew = !entry;
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/edit/board/" + board.id, board.name),
       detailHead("我的板块", isNew ? "添加条目" : "编辑条目"),
       '<form id="entryForm" class="form" autocomplete="off">',
@@ -1162,7 +1259,7 @@
       '<div class="form-actions"><button class="btn primary" type="submit">保存</button><a class="btn ghost" href="#/edit/board/' + board.id + '">取消</a>' +
         (!isNew ? '<button class="btn danger" type="button" id="delEntry">删除这条</button>' : "") + "</div>",
       "</form>"
-    ].join("");
+    ].join(""));
 
     const form = document.getElementById("entryForm");
     form.addEventListener("submit", (e) => {
@@ -1205,14 +1302,14 @@
       "</div>"
     ].join("")).join("");
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/edit", "编辑"),
       detailHead("编辑 · 流程", "流程编辑", isCustom ? "当前为自定义流程" : "当前为内置早班流程"),
       '<div class="subhead-actions"><a class="btn primary" href="#/edit/flow/new">添加条目</a>' +
         (isCustom ? '<button class="rowlink" type="button" id="resetFlowCustom">恢复内置流程</button>' : "") + "</div>",
       items.length ? '<div class="boardlist">' + rows + "</div>" : '<div class="empty"><p>还没有流程条目</p></div>',
       footLine("修改后以你的自定义流程为准；「恢复内置流程」可以还原成最初 12 项。勾选记录不受影响。")
-    ].join("");
+    ].join(""));
 
     els.view.querySelectorAll("[data-del-flow]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1253,7 +1350,7 @@
     const weekOptions = ["", "0", "1", "2", "3", "4", "5", "6"];
     const weekLabels = ["每天", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/edit/flow", "流程编辑"),
       detailHead("编辑 · 流程", isNew ? "添加流程条目" : "编辑流程条目"),
       '<form id="flowForm" class="form" autocomplete="off">',
@@ -1268,7 +1365,7 @@
       '<div class="form-actions"><button class="btn primary" type="submit">保存</button><a class="btn ghost" href="#/edit/flow">取消</a>' +
         (!isNew ? '<button class="btn danger" type="button" id="delFlowItem">删除这条</button>' : "") + "</div>",
       "</form>"
-    ].join("");
+    ].join(""));
 
     const form = document.getElementById("flowForm");
     form.addEventListener("submit", (e) => {
@@ -1303,7 +1400,7 @@
   function renderBackup() {
     let size = 0;
     try { size = new Blob([JSON.stringify(CUSTOM)]).size; } catch (err) { size = 0; }
-    els.view.innerHTML = [
+    els.view.innerHTML = detailWrap([
       backLink("#/edit", "编辑"),
       detailHead("编辑 · 备份", "备份与恢复", "只包含你新增的板块和流程"),
       '<div class="editgrid">' +
@@ -1316,7 +1413,7 @@
         "<p>存储位置：本机浏览器 localStorage（wh.custom.v1），不上传公网、不跨设备自动同步。</p>" +
       "</section>",
       footLine("建议：加完重要内容后导出一次，把 JSON 发到微信「文件传输助手」存着；换手机时在新设备导入即可。")
-    ].join("");
+    ].join(""));
 
     const exp = document.getElementById("exportBtn");
     if (exp) exp.addEventListener("click", () => {
@@ -1412,7 +1509,17 @@
     }
   });
 
-  window.addEventListener("hashchange", () => { if (appReady) renderRoot(); });
+  window.addEventListener("hashchange", () => {
+    if (!appReady) return;
+    scrollMemo[lastHash] = window.scrollY;
+    const prev = lastHash;
+    const next = location.hash;
+    lastHash = next;
+    const p = prev.replace(/^#\/?/, "").split("/").filter(Boolean);
+    const n = next.replace(/^#\/?/, "").split("/").filter(Boolean);
+    const up = n.length < p.length && n.every((seg, i) => seg === p[i]);
+    renderRoot({ restoreY: up ? (scrollMemo[next] || 0) : 0 });
+  });
 
   /* ============================================================
    * 解锁 / 启动
@@ -1502,6 +1609,7 @@
     initData(data);
     appReady = true;
     document.body.classList.remove("locked");
+    lastHash = location.hash;
     updateBranding();
     renderRoot();
   }
@@ -1577,6 +1685,7 @@
 
   /* ---------------- 启动流程 ---------------- */
   if (!location.hash) location.hash = "#/flow";
+  lastHash = location.hash;
   registerSW();
 
   const cachedSession = sessionLoad();
