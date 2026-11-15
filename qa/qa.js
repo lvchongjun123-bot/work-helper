@@ -125,6 +125,11 @@ async function unlockIfLocked(page, password) {
     await page.waitForTimeout(300);
     check("lock: 刷新后保持解锁", (await page.locator("#unlockPwd").count()) === 0);
 
+    await page.evaluate(() => sessionStorage.clear());
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForTimeout(1200);
+    check("lock: 记住后自动解锁", (await page.locator("#unlockPwd").count()) === 0);
+
     await page.goto(base + "#/flow", { waitUntil: "networkidle" });
     await page.waitForTimeout(250);
     const items = await page.locator(".titem").count();
@@ -345,5 +350,6 @@ async function unlockIfLocked(page, password) {
     process.exitCode = 1;
   }
 })();
+
 
 

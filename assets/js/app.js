@@ -1155,12 +1155,24 @@
             ? '<div class="boardlist">' + boards.map((b, i) => boardRowHtml(b, i, true)).join("") + "</div>"
             : '<div class="empty"><p>还没有自定义板块</p><span class="empty-sub">点上方「新建板块」开始加内容</span></div>') +
         "</section>",
+        '<section class="sec aboutbox"><h2>本机自动解锁</h2>' +
+          "<p>" + (rememberedKey() ? "已开启：下次打开自动解锁，不用再输密码。" : "未开启：下次打开需要输入密码。") + "</p>" +
+          (rememberedKey() ? '<div class="form-actions"><button class="rowlink danger" type="button" id="forgetKey">关闭自动解锁</button></div>' : "") +
+        "</section>",
         '<section class="sec aboutbox"><h2>数据存在哪</h2>' +
           "<p>你新增的板块、条目和流程只保存在这台设备的浏览器里，不上传公网。换手机或清理浏览器数据前，先在「备份与恢复」导出 JSON，另一台设备导入即可。</p>" +
           "<p>内置的 35 条审核条目、速记卡是只读的；想改其中内容，可以把要点放进「我的板块」再编辑。</p>" +
         "</section>"
       ].join("")
     );
+
+    const forget = document.getElementById("forgetKey");
+    if (forget) forget.addEventListener("click", () => {
+      if (!window.confirm("关闭后，下次打开需要重新输入密码。继续？")) return;
+      clearRemembered();
+      setRememberPref("0");
+      renderRoot({ keepScroll: true });
+    });
   }
 
   function renderBoardForm(boardId) {
@@ -1553,6 +1565,17 @@
     try { return localStorage.getItem(REMEMBER_KEY); } catch (err) { return null; }
   }
 
+  const REMEMBER_PREF_KEY = "wh.rememberPref.v1";
+  function rememberPref() {
+    try {
+      const v = localStorage.getItem(REMEMBER_PREF_KEY);
+      return v === null ? "1" : v;
+    } catch (err) { return "1"; }
+  }
+  function setRememberPref(v) {
+    try { localStorage.setItem(REMEMBER_PREF_KEY, v); } catch (err) { /* 忽略 */ }
+  }
+
   function rememberKey(b64) {
     try { localStorage.setItem(REMEMBER_KEY, b64); } catch (err) { /* 忽略 */ }
   }
@@ -1626,7 +1649,7 @@
       '<input id="unlockPwd" type="password" placeholder="访问密码" aria-label="访问密码" autocomplete="current-password" required>',
       '<button class="btn primary" type="submit" id="unlockBtn">解锁</button>',
       "</form>",
-      '<label class="lock-remember"><input type="checkbox" id="rememberChk"> 在此设备记住（下次自动解锁）</label>',
+      '<label class="lock-remember"><input type="checkbox" id="rememberChk"' + (rememberPref() === "1" ? " checked" : "") + '> 以后自动解锁（本机记住，公用设备请取消）</label>',
       '<p class="lock-error" id="lockError" role="alert">' + esc(message || "") + "</p>",
       '<p class="lock-foot">密码只在本机参与解密，不会上传；忘记后需要重新生成加密数据包。</p>',
       "</section>"
@@ -1649,6 +1672,8 @@
       try {
         const remember = document.getElementById("rememberChk").checked;
         const data = await unlockWithPassword(pwd, remember);
+        setRememberPref(remember ? "1" : "0");
+        if (!remember) clearRemembered();
         sessionSave(data);
         startApp(data);
       } catch (ex) {
