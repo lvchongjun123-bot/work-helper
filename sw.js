@@ -1,7 +1,7 @@
 /* 工作小助手 Service Worker
  * 版本号变更后需同步修改 CACHE 常量，否则老客户端会继续命中旧缓存。
  */
-const CACHE = "work-helper-v6";
+const CACHE = "work-helper-v7";
 const ASSETS = [
   "./index.html",
   "./manifest.webmanifest",
@@ -65,6 +65,7 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
 
 
 

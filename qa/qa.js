@@ -180,7 +180,7 @@ async function unlockIfLocked(page, password) {
     await page.locator(".chip", { hasText: "重点" }).first().click();
     await page.waitForTimeout(300);
     const meta = await page.locator(".quiz-meta").innerText();
-    check("quiz: 重点 34 题", /\/\s*34\s*题/.test(meta), meta.replace(/\s+/g, " "));
+    check("quiz: 重点 26 题", /\/\s*26\s*题/.test(meta), meta.replace(/\s+/g, " "));
     await page.locator("#revealBtn").click();
     await page.waitForTimeout(250);
     check("quiz: reveal answer", (await page.locator(".answer").count()) === 1);
@@ -212,7 +212,7 @@ async function unlockIfLocked(page, password) {
     /* 速查 */
     await page.goto(base + "#/ref", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
-    check("ref: sections", (await page.locator(".refitem").count()) >= 13);
+    check("ref: sections", (await page.locator(".refitem").count()) >= 8);
     await shoot(page, "m390-ref");
     await page.goto(base + "#/ref/temp", { waitUntil: "networkidle" });
     await page.waitForTimeout(200);
@@ -350,6 +350,7 @@ async function unlockIfLocked(page, password) {
     process.exitCode = 1;
   }
 })();
+
 
 
 

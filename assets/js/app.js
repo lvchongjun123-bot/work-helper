@@ -1025,8 +1025,8 @@
   function renderRefList() {
     const groups = [
       { id: "s-ref-core", title: "审核标准", ids: ["basics", "score", "red", "temp"] },
-      { id: "s-ref-cards", title: "速记卡", ids: ["calib", "fourfood", "fourfire", "sick", "pest", "chem", "mnemonic"] },
-      { id: "s-ref-policy", title: "流程与政策", ids: ["appeal", "policy"] }
+      { id: "s-ref-policy", title: "专项政策", ids: ["fourfood", "pest"] },
+      { id: "s-ref-process", title: "流程与政策", ids: ["appeal", "policy"] }
     ];
     const indexOf = {};
     REF.forEach((s, i) => { indexOf[s.id] = i; });
@@ -1047,7 +1047,7 @@
       [
         groupsHtml,
         customHtml,
-        footLine("标「待核对」的卡片来自 9 月背诵表，与 V1.2 有差异或未被收录；请以公司最新文件为准。"),
+        footLine("内容均来自 FSHA 审核标准 V1.2（2026-11-07），仅保留云仓 FSHA 范围。"),
         '<section class="sec aboutbox"><h2>关于</h2>' +
           "<p>" + esc(META.appName || "工作小助手") + " · FSHA " + esc(META.fshaVersion || "") + "（" + esc(META.fshaUpdated || "") + "）</p>" +
           "<p>内容来源：" + esc(META.source || "") + "；流程初版来自 daily-workflow 早班模板。</p>" +
